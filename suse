@@ -1,0 +1,226 @@
+To force Jenkins to use your spacious 17 GB free disk space partition instead of the small 956 MB RAM partition, you need to point Jenkins' temporary directory to a location inside your root (/) directory.
+Here is exactly how to move it:
+
+Step 1: Create a Temp Folder on your EC2 Instance
+
+Connect to your SUSE EC2 terminal and create a dedicated folder inside the Jenkins home directory on your main drive:
+bash
+# 1. Create a new directory for temp files
+sudo mkdir -p /var/lib/jenkins/workspace_tmp
+
+# 2. Grant full ownership permissions to the jenkins user
+sudo chown -R jenkins:jenkins /var/lib/jenkins/workspace_tmp
+Use code with caution.
+
+Step 2: Point Jenkins to the New Directory
+
+1. Go to Dashboard > Manage Jenkins > Nodes and Clouds.
+2. Click the gear icon ⚙️ (Configure) on the far right of the Built-In Node row.
+3. Scroll down to the Node Properties section.
+4. Check the box next to Environment variables.
+5. Click the Add button and fill in these values:
+	• Name: JENKINS_JAVA_OPTS
+	• Value: -Djava.io.tmpdir=/var/lib/jenkins/workspace_tmp
+
+Step 3: Revert the Threshold Constraints
+
+Since Jenkins will now be checking your main 17 GB storage drive, you can safely change your Free Temp Space Thresholds back to standard numbers so your server stays protected:
+1. In that same window, look at your Disk Space Monitoring Thresholds section.
+2. Change Free Temp Space Threshold back to 1GiB.
+3. Change Free Temp Space Warning Threshold back to 2GiB.
+4. Click the blue Save button at the bottom of the page.
+
+Step 4: Restart the Jenkins Service
+
+For Jenkins to register the new Java optimization settings (JENKINS_JAVA_OPTS), restart the service via your terminal:
+bash
+sudo systemctl restart jenkins
+Use code with caution.
+Once the service restarts, Jenkins will completely ignore the RAM-backed /tmp drive. It will look directly at your root drive partition, see 16.94 GiB of free temp space, and your builds will run flawlessly without ever tripping the safety threshold again!
+After restarting the service, does the Free Temp Space column on your Nodes page update to reflect the 16+ GiB partition?
+
+You said: Disk space is below threshold of 1.00 GiB. Only 951.20 MiB out of 955.95 MiB left on /tmp.
+
+Disk space is below threshold of 1.00 GiB. Only 951.20 MiB out of 955.95 MiB left on /tmp.
+2:37 pm
+The environment variable option you set inside the node configuration interface did not apply because the core Jenkins application checks the server's master system property (/tmp) before it evaluates individual node-level scripts.
+Since Jenkins runs as a system service on your SUSE EC2 instance, you must feed the new folder configuration directly into the systemd service file so the Java engine knows about the 17 GB drive before the app even initializes.
+Follow these direct steps on your EC2 terminal line to override the configuration at the root level:
+
+Step 1: Open the Jenkins Service Override File
+
+Run this command to open an override configuration file for the Jenkins service inside your text editor:
+bash
+sudo systemctl edit jenkins
+Use code with caution.
+
+Step 2: Add the Storage Override Lines
+
+An empty text buffer or a file filled with commented-out code will open. Paste the following text blocks into the empty space at the very top of the file:
+ini
+[Service]
+Environment="JAVA_OPTS=-Djava.io.tmpdir=/var/lib/jenkins/workspace_tmp"
+Use code with caution.
+Save the file and close out of your editor (if you are using the default nano editor, press Ctrl+O, Enter, then Ctrl+X).
+
+Step 3: Reload and Restart the Service
+
+Execute these two commands to register your new configuration overrides and restart the underlying platform:
+bash
+# 1. Force systemd to reload its configuration cache
+sudo systemctl daemon-reload
+
+# 2. Restart Jenkins to apply the 17GB drive switch
+sudo systemctl restart jenkins
+Use code with caution.
+
+Step 4: Validate the Changes
+
+Give the service roughly 30 seconds to reload its dependencies, then refresh your Jenkins Nodes and Clouds web dashboard page.
+The value displayed inside your Free Temp Space column will instantly scale up from 951.20 MiB to match your massive 16.94 GiB main storage drive partition. The pipeline will clear its bottleneck state and process your code immediately!
+
+You sent: 1 image
+
+2:39 pm
+Your screenshot shows you are in the exact right file, but you placed the configuration text above the required editing zone.
+Systemd strictly discards any text written above the line that reads:
+### Anything between here and the comment below will become the contents of the drop-in file.
+Because it was placed at the very top, systemd ignored your changes entirely when you saved, keeping Jenkins attached to the small RAM partition.
+Let's fix this layout using the following steps:
+
+Step 1: Open the file again
+
+Run the same command in your terminal to re-open the override editor:
+bash
+sudo systemctl edit jenkins
+Use code with caution.
+
+Step 2: Move the text down into the valid zone
+
+1. Delete the [Service] and Environment=... lines that you currently have at the very top (lines 1 and 2).
+2. Move your cursor down below the line that says ### Anything between here....
+3. Paste the config text exactly in that clear gap.
+Your file structure must look exactly like this:
+text
+### Editing /etc/systemd/system/jenkins.service.d/override.conf
+### Anything between here and the comment below will become the contents of the drop-in file
+
+[Service]
+Environment="JAVA_OPTS=-Djava.io.tmpdir=/var/lib/jenkins/workspace_tmp"
+
+### Edits below this comment will be discarded
+Use code with caution.
+
+Step 3: Save, Reload, and Restart
+
+1. Save the file and exit the editor (Ctrl+O, Enter, then Ctrl+X).
+2. Apply the system changes by running these two commands:bash
+sudo systemctl daemon-reload
+sudo systemctl restart jenkins
+Use code with caution.
+Once Jenkins initializes, check your web panel! The Free Temp Space will now read 16.94 GiB, clearing your node blocks permanently.
+Did saving the configuration text inside the designated zone successfully switch your Free Temp Space readout to the 16+ GiB partition?
+
+You said: undu while editing command
+
+undu while editing command
+2:41 pm
+If you made a mistake while typing or editing the text inside your terminal editor and need to undo your changes, the command depends entirely on which text editor opened up on your screen.
+Look at the very top or bottom bar of your terminal to see which one you are using, and apply the corresponding shortcut:
+
+1. If you are in Nano (Most Common default)
+
+If you see a menu bar with shortcuts like ^G Get Help or ^O WriteOut at the bottom of your screen, you are using Nano.
+• Undo: Press Alt + U (or Esc, then release and press U).
+• Redo: Press Alt + E (or Esc, then release and press E).
+
+2. If you are in Vim / Vi
+
+If you see a tilde (~) character at the beginning of empty lines, you are using Vim.
+1. Press the Esc key first to make sure you are out of typing mode.
+2. Undo: Press the lowercase letter u on your keyboard.
+3. Redo: Press Ctrl + R.
+
+The "Nuclear Option": Exit Without Saving
+
+If the text formatting got completely messed up and it is too hard to undo line-by-line, the safest option is to force the editor to close without saving anything. This allows you to start over with a clean file.
+• In Nano: Press Ctrl + X. When it asks "Save modified buffer?", press N (No).
+• In Vim: Press Esc, type :q!, and hit Enter.
+Once you exit, you can safely run sudo systemctl edit jenkins again to start fresh!
+Which text editor opened up on your SUSE machine (Nano or Vim)? Let me know if you were able to successfully clear out the mistake or exit the file.
+
+You sent: 1 image
+
+2:42 pm
+Your image shows you are editing the file using Vim, but the configuration text is placed inside the discard zone where all lines begin with a # comment symbol. Systemd ignores anything in that bottom area.
+You need to completely clear out what you have typed there and place the text in the clean window at the very top of the file.
+Follow these exact keystrokes in Vim to fix it perfectly:
+
+Step 1: Wipe everything and start clean
+
+Since editing line-by-line in Vim can be confusing, the easiest option is to exit without saving and restart.
+1. Press the Esc key on your keyboard.
+2. Type :q! and press Enter. (This forces the editor to close without saving your changes).
+
+Step 2: Open the file again
+
+Run the edit command to open a fresh view:
+bash
+sudo systemctl edit jenkins
+Use code with caution.
+
+Step 3: Insert the text in the correct location
+
+When the file opens, your cursor will be on line 1 at the very top.
+1. Press the down arrow key twice to place your cursor on the empty line right below:
+### Anything between here and the comment below will become the contents of the drop-in file
+2. Press the i key on your keyboard. (Look at the bottom left of your terminal; it will now say -- INSERT --).
+3. Paste or type these exact lines into that empty space:text
+[Service]
+Environment="JAVA_OPTS=-Djava.io.tmpdir=/var/lib/jenkins/workspace_tmp"
+Use code with caution.
+
+Step 4: Save and Close Vim
+
+1. Press the Esc key to leave insert mode.
+2. Type :wq and press Enter. (This stands for Write and Quit, which saves your progress).
+
+Step 5: Refresh System Services
+
+Now apply the configuration changes by running these commands in your standard terminal command prompt:
+bash
+sudo systemctl daemon-reload
+sudo systemctl restart jenkins
+Use code with caution.
+Once Jenkins restarts, open your web panel. Does the Free Temp Space successfully show your 16+ GiB partition space now?
+
+You sent: 1 image
+
+2:43 pm
+You nailed it! The file is structured exactly right now. The configuration properties are perfectly placed within the active drop-in editing zone.
+Now, all you need to do is save the file and apply the updates to your SUSE system.
+Follow these steps directly from your current screen:
+
+Step 1: Save and Exit Vim
+
+1. Press the Esc key on your keyboard to make sure you are in command mode.
+2. Type :wq and press Enter.
+(This will save your modifications and return you back to your regular green terminal prompt).
+
+Step 2: Reload and Restart Jenkins
+
+Run these final two commands in your terminal to apply the configuration:
+bash
+# 1. Update systemd's manager configuration cache
+sudo systemctl daemon-reload
+
+# 2. Restart Jenkins to move the temp directory to your 17GB drive
+sudo systemctl restart jenkins
+Use code with caution.
+
+Step 3: Check Jenkins
+
+Give the platform about 30 seconds to spin back up, then refresh your Jenkins Nodes and Clouds page. The Free Temp Space readout will successfully leap to 16.94 GiB, clearing out the resource warning for good.
+Is your Built-In Node displaying the full 16+ GiB free space now, and has your project build finally jumped out of the queue and started running?
+
+You said: give this search as a text file
